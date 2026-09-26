@@ -3,9 +3,8 @@ import { z } from 'zod';
 import prisma from '../utils/prisma';
 import { sendSuccess, sendError } from '../utils/response';
 import { calculateFare, paisaToBdt } from '../utils/fare';
-import { AREA_NAMES, getArea } from '../utils/areas';
-import { RideStatus, PaymentMethod, PoolStatus } from '@prisma/client';
-import { areRoutesCompatible } from '../utils/areas';
+import { AREA_NAMES, getArea, areRoutesCompatible } from '../utils/areas';
+import { RideStatus, PaymentMethod } from '@prisma/client';
 
 // ── Validation Schemas ────────────────────────────────────────────────────────
 
