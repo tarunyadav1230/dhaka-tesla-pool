@@ -1,0 +1,206 @@
+// This is the Prisma schema for Dhaka Tesla Pool.
+// Database: PostgreSQL
+// All money stored as INTEGER paisa (1 BDT = 100 paisa) to avoid floating-point errors.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────
+
+enum Role {
+  PASSENGER
+  DRIVER
+}
+
+enum RideStatus {
+  REQUESTED
+  MATCHED
+  DRIVER_ARRIVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum PoolStatus {
+  OPEN       // accepting passengers
+  MATCHED    // driver accepted; still accepting more passengers up to capacity
+  DRIVER_ARRIVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  TESLA_PAY
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+}
+
+// ─────────────────────────────────────────────────────────
+// Users
+// ─────────────────────────────────────────────────────────
+
+model User {
+  id                 String   @id @default(uuid())
+  name               String
+  email              String   @unique
+  passwordHash       String
+  phone              String   @unique
+  role               Role
+  walletBalancePaisa Int      @default(0) // paisa; only used for TESLA_PAY
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Relations
+  rideRequests RideRequest[]
+  tesla        Tesla?        // only drivers have a Tesla
+  auditLogs    AuditLog[]
+
+  @@index([email])
+  @@index([role])
+}
+
+// ─────────────────────────────────────────────────────────
+// Tesla (Vehicle owned by a driver)
+// ─────────────────────────────────────────────────────────
+
+model Tesla {
+  id           String   @id @default(uuid())
+  driverId     String   @unique
+  name         String   // e.g. "Bullet"
+  licensePlate String   @unique
+  capacity     Int      // max seats; Bullet = 3
+  isOnline     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  driver User @relation(fields: [driverId], references: [id])
+  pools  Pool[]
+
+  @@index([isOnline])
+}
+
+// ─────────────────────────────────────────────────────────
+// Ride Request (one per passenger booking)
+// ─────────────────────────────────────────────────────────
+
+model RideRequest {
+  id             String     @id @default(uuid())
+  passengerId    String
+  pickupArea     String     // e.g. "Banani"
+  dropoffArea    String     // e.g. "Mohakhali"
+  pickupLat      Float
+  pickupLng      Float
+  dropoffLat     Float
+  dropoffLng     Float
+  seatsRequested Int        @default(1)
+  status         RideStatus @default(REQUESTED)
+  estimatedFarePaisa Int   // calculated at request time
+  actualFarePaisa    Int?  // set on completion
+  paymentMethod  PaymentMethod @default(CASH)
+  paymentStatus  PaymentStatus @default(PENDING)
+  cancelledAt    DateTime?
+  cancelReason   String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  passenger    User           @relation(fields: [passengerId], references: [id])
+  membership   PoolMembership?
+  statusEvents RideStatusEvent[]
+
+  @@index([passengerId])
+  @@index([status])
+  @@index([pickupArea])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────
+// Pool (one pool = one Tesla trip, may have multiple passengers)
+// ─────────────────────────────────────────────────────────
+
+model Pool {
+  id             String     @id @default(uuid())
+  teslaId        String
+  status         PoolStatus @default(OPEN)
+  occupiedSeats  Int        @default(0)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  tesla       Tesla            @relation(fields: [teslaId], references: [id])
+  memberships PoolMembership[]
+
+  @@index([teslaId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────
+// Pool Membership (join table: which ride is in which pool)
+// ─────────────────────────────────────────────────────────
+
+model PoolMembership {
+  id            String   @id @default(uuid())
+  poolId        String
+  rideRequestId String   @unique  // one ride request belongs to at most one pool
+  pickupOrder   Int      @default(0)  // sequence for pickup
+  dropoffOrder  Int      @default(0)  // sequence for dropoff
+  farePaisa     Int      // individual fare for this passenger
+  joinedAt      DateTime @default(now())
+
+  pool        Pool        @relation(fields: [poolId], references: [id])
+  rideRequest RideRequest @relation(fields: [rideRequestId], references: [id])
+
+  @@index([poolId])
+}
+
+// ─────────────────────────────────────────────────────────
+// Ride Status Event (immutable audit trail)
+// ─────────────────────────────────────────────────────────
+
+model RideStatusEvent {
+  id            String     @id @default(uuid())
+  rideRequestId String
+  fromStatus    RideStatus?
+  toStatus      RideStatus
+  actorId       String?    // user who triggered this event
+  note          String?
+  createdAt     DateTime   @default(now())
+
+  rideRequest RideRequest @relation(fields: [rideRequestId], references: [id])
+
+  @@index([rideRequestId])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────
+// Audit Log (general-purpose event log)
+// ─────────────────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  resource  String
+  resourceId String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
