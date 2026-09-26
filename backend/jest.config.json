@@ -1,0 +1,13 @@
+{
+  "preset": "ts-jest",
+  "testEnvironment": "node",
+  "roots": ["<rootDir>/tests"],
+  "testMatch": ["**/*.test.ts"],
+  "moduleNameMapper": {
+    "^@/(.*)$": "<rootDir>/src/$1"
+  },
+  "globalSetup": "<rootDir>/tests/setup.ts",
+  "globalTeardown": "<rootDir>/tests/teardown.ts",
+  "coverageDirectory": "coverage",
+  "collectCoverageFrom": ["src/**/*.ts", "!src/index.ts"]
+}
