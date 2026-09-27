@@ -4,9 +4,6 @@
 
 A ride-pooling MVP for Dhaka — connecting passengers heading the same way, splitting fares fairly, and keeping Jashim's Bullet (a 3-seat battery-powered Tesla) moving efficiently through rush-hour traffic.
 
-[![Demo Video](https://img.shields.io/badge/Demo%20Video-Loom-red?logo=loom)](https://your-loom-link-here)
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-Available-green)](https://your-deployment-url-here)
-
 ---
 
 ## 📋 Table of Contents
@@ -50,9 +47,11 @@ A ride-pooling MVP for Dhaka — connecting passengers heading the same way, spl
 
 ### Passenger
 - [x] Sign up / Sign in (JWT auth, role-based)
-- [x] Request a ride: pickup area, dropoff area, seats, payment method
+- [x] Request a ride: pickup area, dropoff area, seats (1–3), payment method
+- [x] **Solo vs Pool toggle** — explicit choice with live fare diff shown
 - [x] See estimated fare (solo + pooled preview with 20% discount)
 - [x] Track status: REQUESTED → MATCHED → DRIVER_ARRIVED → IN_PROGRESS → COMPLETED
+- [x] **Live driver map** — Leaflet/OpenStreetMap with animated driver marker
 - [x] View ride history with status timeline
 - [x] Cancel while in REQUESTED or MATCHED status only
 - [x] Ownership enforcement: cannot view/cancel another passenger's ride
@@ -75,100 +74,170 @@ A ride-pooling MVP for Dhaka — connecting passengers heading the same way, spl
 - [x] Atomic capacity enforcement (prevents overbooking)
 - [x] Immutable audit trail (RideStatusEvent log)
 
+### UX / i18n
+- [x] 5 languages: English, বাংলা, हिन्दी, العربية (RTL), اردو (RTL)
+- [x] Dark glassmorphism UI with animated ambient orbs
+- [x] Language persisted via localStorage, RTL applied to `document.documentElement`
+
 ---
 
 ## 🏗️ Architecture
 
+### System Diagram
+
+```mermaid
+flowchart TD
+    Browser["🌐 Browser\n(Next.js 14 App Router)"]
+
+    subgraph Frontend["Frontend — localhost:3000"]
+        HP["/ Homepage"]
+        LP["/ login"]
+        RP["/ register"]
+        PD["/ passenger Dashboard"]
+        DD["/ driver Dashboard"]
+        Map["RideMap Component\n(Leaflet + OpenStreetMap)"]
+    end
+
+    subgraph API["Backend — localhost:4000 (Express.js)"]
+        Auth["/api/auth\nregister · login · me"]
+        Rides["/api/rides\nrequest · list · cancel"]
+        Driver["/api/driver\ntoggle · requests · pools"]
+        Areas["/api/areas\nlist · fare-estimate"]
+        MW["Middleware\nJWT auth · Zod validation · Error handler"]
+    end
+
+    subgraph Services["Business Logic"]
+        FareEngine["Fare Engine\nbaseFare + distanceCharge − poolDiscount"]
+        PoolMatcher["Pool Matcher\nzone compatibility · capacity guard"]
+        AreaRegistry["Area Registry\n9 Dhaka zones with lat/lng centroids"]
+    end
+
+    DB[("🐘 PostgreSQL 16\nusers · teslas · ride_requests\npools · pool_memberships\nride_status_events · audit_logs")]
+
+    Browser --> Frontend
+    Frontend -->|"fetch() + JWT Bearer"| MW
+    MW --> Auth
+    MW --> Rides
+    MW --> Driver
+    MW --> Areas
+    Rides --> FareEngine
+    Rides --> PoolMatcher
+    Driver --> PoolMatcher
+    Areas --> AreaRegistry
+    FareEngine --> AreaRegistry
+    Auth --> DB
+    Rides --> DB
+    Driver --> DB
+    Areas --> DB
+    PD --> Map
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Browser                                 │
-│                                                                 │
-│    Next.js 14 App Router (React)                                │
-│    ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │
-│    │  /login      │  │  /passenger  │  │  /driver         │   │
-│    │  /register   │  │  Dashboard   │  │  Dashboard       │   │
-│    └──────────────┘  └──────────────┘  └──────────────────┘   │
-│              │                │                  │              │
-│              └────────────────┼──────────────────┘              │
-│                               │ fetch() with JWT                │
-└───────────────────────────────┼────────────────────────────────┘
-                                │
-                        HTTPS / localhost:4000
-                                │
-┌───────────────────────────────▼────────────────────────────────┐
-│                    Express.js API (Node.js)                     │
-│                                                                 │
-│    ┌────────────┐ ┌─────────────┐ ┌──────────┐ ┌──────────┐  │
-│    │ /api/auth  │ │ /api/rides  │ │/api/driver│ │/api/areas│  │
-│    └────────────┘ └─────────────┘ └──────────┘ └──────────┘  │
-│                                                                 │
-│    Middleware: JWT auth · Zod validation · Error handler        │
-│    Services: Fare engine · Pool matcher · Area registry         │
-│    ORM: Prisma (type-safe)                                      │
-└───────────────────────────────┬────────────────────────────────┘
-                                │ Prisma Client
-                                │
-┌───────────────────────────────▼────────────────────────────────┐
-│                    PostgreSQL 16                                 │
-│                                                                 │
-│    users · teslas · ride_requests · pools                       │
-│    pool_memberships · ride_status_events · audit_logs           │
-└────────────────────────────────────────────────────────────────┘
+
+### Request Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> REQUESTED : Passenger books ride
+    REQUESTED --> MATCHED : Driver accepts into pool
+    REQUESTED --> CANCELLED : Passenger cancels
+    MATCHED --> DRIVER_ARRIVED : Driver marks arrived
+    MATCHED --> CANCELLED : Passenger cancels
+    DRIVER_ARRIVED --> IN_PROGRESS : Driver starts trip
+    IN_PROGRESS --> COMPLETED : Driver completes trip
+    COMPLETED --> [*]
+    CANCELLED --> [*]
 ```
 
 ---
 
 ## 🗃️ Database ERD
 
-```
-users
-├── id (PK, UUID)
-├── name, email (UNIQUE), phone (UNIQUE)
-├── password_hash, role (PASSENGER|DRIVER)
-└── wallet_balance_paisa
+```mermaid
+erDiagram
+    users {
+        uuid id PK
+        string name
+        string email UK
+        string phone UK
+        string password_hash
+        enum role "PASSENGER | DRIVER"
+        int wallet_balance_paisa
+        timestamp created_at
+    }
 
-teslas
-├── id (PK, UUID)
-├── driver_id (FK → users, UNIQUE)
-├── name ("Bullet"), license_plate (UNIQUE)
-├── capacity (3 for Bullet), is_online
-└── Constraint: one Tesla per driver
+    teslas {
+        uuid id PK
+        uuid driver_id FK
+        string name
+        string license_plate UK
+        int capacity
+        boolean is_online
+        timestamp created_at
+    }
 
-ride_requests
-├── id (PK, UUID)
-├── passenger_id (FK → users)
-├── pickup_area, dropoff_area (named Dhaka areas)
-├── pickup_lat/lng, dropoff_lat/lng
-├── seats_requested, status (RideStatus enum)
-├── estimated_fare_paisa, actual_fare_paisa
-├── payment_method, payment_status
-└── cancelled_at, cancel_reason
+    ride_requests {
+        uuid id PK
+        uuid passenger_id FK
+        string pickup_area
+        string dropoff_area
+        float pickup_lat
+        float pickup_lng
+        float dropoff_lat
+        float dropoff_lng
+        int seats_requested
+        enum status "REQUESTED|MATCHED|DRIVER_ARRIVED|IN_PROGRESS|COMPLETED|CANCELLED"
+        int estimated_fare_paisa
+        int actual_fare_paisa
+        enum payment_method "CASH | TESLA_PAY"
+        enum payment_status
+        timestamp cancelled_at
+        string cancel_reason
+    }
 
-pools
-├── id (PK, UUID)
-├── tesla_id (FK → teslas)
-├── status (PoolStatus enum)
-├── occupied_seats
-└── started_at, completed_at
+    pools {
+        uuid id PK
+        uuid tesla_id FK
+        enum status "MATCHED|DRIVER_ARRIVED|IN_PROGRESS|COMPLETED|CANCELLED"
+        int occupied_seats
+        timestamp started_at
+        timestamp completed_at
+    }
 
-pool_memberships  ← joins ride_requests to pools
-├── id (PK, UUID)
-├── pool_id (FK → pools)
-├── ride_request_id (FK → ride_requests, UNIQUE)
-├── pickup_order, dropoff_order
-└── fare_paisa (individual fare for this passenger)
+    pool_memberships {
+        uuid id PK
+        uuid pool_id FK
+        uuid ride_request_id FK
+        int pickup_order
+        int dropoff_order
+        int fare_paisa
+    }
 
-ride_status_events  ← immutable audit trail
-├── id (PK, UUID)
-├── ride_request_id (FK → ride_requests)
-├── from_status, to_status
-├── actor_id, note
-└── created_at
+    ride_status_events {
+        uuid id PK
+        uuid ride_request_id FK
+        enum from_status
+        enum to_status
+        uuid actor_id FK
+        string note
+        timestamp created_at
+    }
 
-audit_logs  ← general-purpose logging
-├── id (PK, UUID)
-├── user_id, action, resource, resource_id
-└── metadata (JSON), created_at
+    audit_logs {
+        uuid id PK
+        uuid user_id FK
+        string action
+        string resource
+        uuid resource_id
+        json metadata
+        timestamp created_at
+    }
+
+    users ||--o{ ride_requests : "passenger"
+    users ||--o| teslas : "driver owns"
+    teslas ||--o{ pools : "operates"
+    pools ||--o{ pool_memberships : "contains"
+    ride_requests ||--o| pool_memberships : "joined via"
+    ride_requests ||--o{ ride_status_events : "logs"
+    users ||--o{ audit_logs : "actor"
 ```
 
 ---
@@ -234,13 +303,14 @@ No live map API. Areas are predefined centroids with zone assignments:
 |-------|--------|------------------------|-----------|--------------|
 | Frontend | Next.js 14 (App Router) | Plain React + Router | SSR/routing built-in, good DX, recommended in brief | If team strongly prefers SPA-only |
 | Backend | Express.js | NestJS, Fastify | Minimal, well-understood, easy to justify every line. NestJS is great but its abstraction layers add cognitive overhead for an MVP | Switching to NestJS at 5+ engineers for structure/IoC |
-| Database | PostgreSQL 16 | SQLite, MySQL | Relational integrity for pooling/capacity, transactions for race conditions, JSONB for metadata, `FOR UPDATE` locking for scale | SQLite would work for pure local demo but fails under concurrent load |
+| Database | PostgreSQL 16 | SQLite, MySQL | Relational integrity for pooling/capacity, transactions for race conditions, JSONB for metadata | SQLite would work for pure local demo but fails under concurrent load |
 | ORM | Prisma | TypeORM, Drizzle, raw SQL | Type-safe schema, migrations, excellent DX, generates types from schema | Drizzle for ultra-performance-critical SQL |
-| Auth | JWT (jsonwebtoken) | Passport.js, Auth0, sessions | Stateless, simple for MVP, role included in token. No session storage needed. | Auth0 or Supabase Auth if SSO/OAuth required |
+| Auth | JWT (jsonwebtoken) | Passport.js, Auth0, sessions | Stateless, simple for MVP, role included in token. No session storage needed | Auth0 or Supabase Auth if SSO/OAuth required |
 | Validation | Zod | Joi, Yup | TypeScript-native, schema doubles as type inference, excellent error messages | — |
-| CSS | Vanilla CSS (custom design system) | Tailwind, Styled Components | Full control, no build-time processing, glass morphism design achievable | Tailwind if team prefers utility-first and scales to many devs |
+| CSS | Vanilla CSS (custom design system) | Tailwind, Styled Components | Full control, no build-time processing, glassmorphism design | Tailwind if team prefers utility-first |
+| Map | Leaflet + OpenStreetMap | Google Maps, Mapbox | Free, no API key, sufficient for zone-level display | Google Maps if turn-by-turn routing needed |
 | Testing | Jest + Supertest | Vitest, Mocha | Jest is the standard Node.js test framework, Supertest for HTTP integration tests | Vitest for ESM-native projects |
-| Docker | docker compose | K8s, plain Docker | Docker Compose is sufficient for a single-machine MVP; K8s only when multi-node scaling is actually needed | — |
+| Docker | docker compose | K8s, plain Docker | Docker Compose is sufficient for a single-machine MVP | — |
 
 ---
 
@@ -250,7 +320,7 @@ No live map API. Areas are predefined centroids with zone assignments:
 dhaka-tesla-pool/
 ├── backend/
 │   ├── prisma/
-│   │   ├── schema.prisma        # Database schema
+│   │   ├── schema.prisma        # Database schema (7 models)
 │   │   └── seed.ts              # Jashim, Bullet, Nusrat, Rafiq, Shirin
 │   ├── src/
 │   │   ├── controllers/
@@ -260,44 +330,49 @@ dhaka-tesla-pool/
 │   │   ├── middleware/
 │   │   │   ├── auth.ts          # JWT verification + role guard
 │   │   │   ├── validate.ts      # Zod middleware factory
-│   │   │   └── errorHandler.ts
+│   │   │   └── errorHandler.ts  # ZodError + ApiError handler
 │   │   ├── routes/
 │   │   │   ├── auth.routes.ts
 │   │   │   ├── ride.routes.ts
 │   │   │   ├── driver.routes.ts
 │   │   │   └── areas.routes.ts
 │   │   ├── utils/
-│   │   │   ├── areas.ts         # Dhaka area registry + zone matching
+│   │   │   ├── areas.ts         # 9 Dhaka area centroids + zone matching
 │   │   │   ├── fare.ts          # Fare calculation engine
 │   │   │   ├── prisma.ts        # Singleton DB client
 │   │   │   └── response.ts      # API response helpers
-│   │   ├── app.ts               # Express app setup
+│   │   ├── app.ts               # Express app setup + CORS
 │   │   └── index.ts             # Server entrypoint
 │   ├── tests/
-│   │   ├── api.test.ts          # Integration tests
-│   │   ├── fare.test.ts         # Fare calculation unit tests
+│   │   ├── api.test.ts          # Integration tests (auth, ownership, capacity)
+│   │   ├── fare.test.ts         # Fare unit tests (hand-verifiable)
 │   │   ├── pool.test.ts         # Pool matching unit tests
 │   │   ├── setup.ts
 │   │   └── teardown.ts
-│   ├── Dockerfile
-│   ├── entrypoint.sh
+│   ├── Dockerfile               # Multi-stage Node 20 Alpine build
+│   ├── entrypoint.sh            # migrate → seed → start
 │   └── package.json
 ├── frontend/
 │   ├── app/
-│   │   ├── layout.tsx           # Root layout with AuthProvider
-│   │   ├── globals.css          # Design system
-│   │   ├── page.tsx             # Landing page
-│   │   ├── login/page.tsx
-│   │   ├── register/page.tsx
-│   │   ├── passenger/page.tsx   # Passenger dashboard
-│   │   └── driver/page.tsx      # Driver dashboard
+│   │   ├── layout.tsx           # Root layout: AuthProvider + LangProvider
+│   │   ├── globals.css          # Premium design system v2 (glassmorphism)
+│   │   ├── page.tsx             # Landing page with hero, stats, how-it-works
+│   │   ├── login/page.tsx       # Login with i18n + role-based redirect
+│   │   ├── register/page.tsx    # Register with role selector + i18n
+│   │   ├── passenger/page.tsx   # Dashboard: request, track, cancel, map
+│   │   └── driver/page.tsx      # Dashboard: online, accept, lifecycle
+│   ├── components/
+│   │   ├── LangSwitcher.tsx     # Language dropdown (5 languages)
+│   │   └── RideMap.tsx          # Live Leaflet map with animated driver
 │   ├── lib/
-│   │   ├── api.ts               # Typed API client
-│   │   └── auth-context.tsx     # React auth context
-│   ├── Dockerfile
+│   │   ├── api.ts               # Typed fetch client for all endpoints
+│   │   ├── auth-context.tsx     # React auth context (JWT persistence)
+│   │   ├── i18n.ts              # Translation dictionary (EN/BN/HI/AR/UR)
+│   │   └── lang-context.tsx     # Language context + RTL management
+│   ├── Dockerfile               # Next.js standalone output
 │   └── package.json
-├── docker-compose.yml
-├── .env.example
+├── docker-compose.yml           # db + api + frontend; health checks
+├── .env.example                 # All env vars with defaults
 └── README.md
 ```
 
@@ -361,6 +436,7 @@ docker compose up --build
 curl http://localhost:4000/health
 
 # Seed data is automatically applied on first startup via entrypoint.sh
+# (migrate → seed → start server)
 ```
 
 ### Environment Variables
@@ -395,9 +471,9 @@ All endpoints return `{ success: boolean, data?: T, error?: string }`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/rides/request` | Request a new ride |
-| GET | `/api/rides` | List my rides |
-| GET | `/api/rides/:id` | Get a single ride (owned) |
+| POST | `/api/rides/request` | Request a new ride (seats, pickup, dropoff, payment) |
+| GET | `/api/rides` | List my rides (with status events + pool info) |
+| GET | `/api/rides/:id` | Get a single ride (owned only) |
 | POST | `/api/rides/:id/cancel` | Cancel a ride (REQUESTED/MATCHED only) |
 
 ### Driver
@@ -405,17 +481,17 @@ All endpoints return `{ success: boolean, data?: T, error?: string }`.
 | Method | Path | Description |
 |--------|------|-------------|
 | PATCH | `/api/driver/tesla/status` | Toggle Bullet online/offline |
-| GET | `/api/driver/requests` | See pending ride requests |
-| POST | `/api/driver/pools/accept` | Accept rides into a pool |
+| GET | `/api/driver/requests` | See pending ride requests (online only) |
+| POST | `/api/driver/pools/accept` | Accept 1–N rides into a pool |
 | GET | `/api/driver/pools` | List all pools |
-| GET | `/api/driver/pools/:poolId` | Get pool details |
-| PATCH | `/api/driver/pools/:poolId/status` | Advance pool lifecycle |
+| GET | `/api/driver/pools/:poolId` | Get pool details with passengers |
+| PATCH | `/api/driver/pools/:poolId/status` | Advance: MATCHED→DRIVER_ARRIVED→IN_PROGRESS→COMPLETED |
 
 ### Areas
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/areas` | List all Dhaka areas |
+| GET | `/api/areas` | List all 9 Dhaka areas with lat/lng |
 | GET | `/api/areas/fare-estimate?pickup=Banani&dropoff=Mohakhali` | Get solo + pooled fare estimate |
 
 ---
@@ -474,29 +550,23 @@ At 1M passengers / 100k drivers, this transaction approach creates lock contenti
 
 ## 📈 If Oi Tesla Goes Viral – Scale to 1M
 
-```
-                        ┌─────────────┐
-                        │   CDN       │  Static assets, edge caching
-                        └──────┬──────┘
-                               │
-                        ┌──────▼──────┐
-                        │  Load       │  nginx / ALB
-                        │  Balancer   │  Rate limiting, SSL termination
-                        └──────┬──────┘
-                  ┌────────────┼────────────┐
-          ┌───────▼─┐    ┌─────▼──┐   ┌────▼────┐
-          │  API    │    │  API   │   │  API    │  Horizontal Express instances
-          │  Pod 1  │    │  Pod 2 │   │  Pod N  │  Stateless (JWT, no sessions)
-          └────┬────┘    └───┬────┘   └────┬────┘
-               └────────────┼──────────────┘
-                        ┌───▼────┐
-                        │ Redis  │  Pool locks, session cache, rate limit counters
-                        └───┬────┘
-              ┌─────────────┼─────────────┐
-        ┌─────▼──┐    ┌─────▼──┐   ┌─────▼──┐
-        │  PG    │    │  PG    │   │  PG    │  Primary + Read Replicas
-        │Primary │    │Replica │   │Replica │  Writes to primary, reads from replicas
-        └────────┘    └────────┘   └────────┘
+```mermaid
+flowchart TD
+    CDN["CDN\nStatic assets + edge cache"]
+    LB["Load Balancer\nnginx / ALB\nRate limiting · SSL termination"]
+    API1["API Pod 1\nExpress (stateless)"]
+    API2["API Pod 2"]
+    APIN["API Pod N"]
+    Redis["Redis\nPool locks · rate-limit counters"]
+    PGP["PostgreSQL Primary\nWrites"]
+    PGR1["PG Replica 1\nReads"]
+    PGR2["PG Replica 2\nReads"]
+
+    CDN --> LB
+    LB --> API1 & API2 & APIN
+    API1 & API2 & APIN --> Redis
+    API1 & API2 & APIN --> PGP
+    PGP --> PGR1 & PGR2
 ```
 
 **Key scaling decisions:**
@@ -510,7 +580,6 @@ At 1M passengers / 100k drivers, this transaction approach creates lock contenti
 - **Observability**: Structured JSON logs + OpenTelemetry traces + Prometheus metrics
 - **DB indexing**: Indexes on `(pickup_area, status)`, `(passenger_id, status)`, `(tesla_id, status)` already in schema
 - **Soft deletes**: Never hard-delete ride history — regulatory/dispute requirement
-- **Retry strategy**: Exponential backoff on network failures between services
 - **Multi-region**: Deploy to Singapore (closer to BD) with Neon/Supabase global DB
 
 ---
@@ -519,13 +588,15 @@ At 1M passengers / 100k drivers, this transaction approach creates lock contenti
 
 Per the brief — AI use is disclosed, not hidden.
 
-**Tools used:** Claude (Anthropic) via Antigravity IDE for pair programming, architecture review, and code generation.
+**Tools used:** Google Antigravity IDE (powered by Gemini) for pair programming, architecture review, and code generation.
 
 **What AI helped with:**
 - Boilerplate scaffolding (Prisma schema, Express middleware patterns)
 - TypeScript type definitions for the API client
-- CSS design system (glassmorphism styling approach)
+- CSS design system (glassmorphism + premium UI approach)
 - Test structure suggestions
+- i18n translation dictionary for 5 languages
+- Leaflet map integration for live driver tracking
 
 **One AI suggestion I accepted:**  
 Using `$transaction` in Prisma for the pool acceptance flow. I had initially planned to do the capacity check and creation as two separate operations. AI correctly pointed out this creates a TOCTOU (time-of-check to time-of-use) race condition and suggested wrapping in a transaction. This directly maps to the concurrency problem in Section 12 of the brief.
@@ -539,7 +610,7 @@ AI initially suggested using Redis for session storage alongside JWT. I rejected
 
 1. **No real-time updates**: Passengers poll every 5 seconds. Production would use WebSockets or SSE.
 2. **No payment gateway**: TeslaPay is simulated wallet balance; no real money movement.
-3. **No map/routing**: Areas are predefined centroids. Real routing would use Google Maps / OSRM.
+3. **Simplified map**: Live driver map uses simulated movement (animate toward pickup/dropoff). Real routing needs Google Maps / OSRM. Area pins use real Dhaka lat/lng centroids from OpenStreetMap.
 4. **No driver-passenger messaging**: In production, passengers need to communicate pickup details.
 5. **No push notifications**: Status changes require polling. Production uses FCM/APNS.
 6. **Single driver**: The MVP assumes Jashim is the only driver. Multi-driver matching needs geospatial search.
@@ -561,4 +632,4 @@ AI initially suggested using Redis for session storage alongside JWT. I rejected
 
 ---
 
-*Built for RoBenDevs Engineering Challenge. Jashim's Bullet still has three wheels — but the engineering is production-minded.*
+*Built for RoBenDevs Engineering Challenge. Jashim's Bullet still has three seats — but the engineering is production-minded.*
