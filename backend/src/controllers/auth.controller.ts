@@ -12,7 +12,7 @@ export const RegisterSchema = z.object({
   name: z.string().min(2).max(80),
   email: z.string().email(),
   password: z.string().min(6).max(100),
-  phone: z.string().regex(/^\+8801[3-9]\d{8}$/, 'Must be a valid BD mobile number (+8801XXXXXXXXX)'),
+  phone: z.string().regex(/^[+]?[\d\s\-().]{7,20}$/, 'Must be a valid phone number (7-15 digits)'),
   role: z.enum(['PASSENGER', 'DRIVER']),
 });
 

@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { ZodError } from 'zod';
 import { sendError } from '../utils/response';
 
 /**
@@ -8,6 +9,12 @@ import { sendError } from '../utils/response';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction) {
   console.error(`[ERROR] ${req.method} ${req.path}:`, err.message);
+
+  // Zod validation error (unhandled by validate middleware)
+  if (err instanceof ZodError) {
+    const issues = err.errors.map((e) => ({ field: e.path.join('.'), message: e.message }));
+    return sendError(res, 'Validation failed', 422, issues);
+  }
 
   // Prisma unique constraint violation
   if ('code' in err && (err as NodeJS.ErrnoException).code === 'P2002') {
@@ -21,3 +28,4 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
 
   return sendError(res, err.message || 'Internal server error', 500);
 }
+
