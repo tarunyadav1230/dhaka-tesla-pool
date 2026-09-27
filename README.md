@@ -86,49 +86,40 @@ A ride-pooling MVP for Dhaka — connecting passengers heading the same way, spl
 ### System Diagram
 
 ```mermaid
-flowchart TD
-    Browser["🌐 Browser\n(Next.js 14 App Router)"]
+flowchart LR
+    Browser[Browser / Next.js 14]
 
-    subgraph Frontend["Frontend — localhost:3000"]
-        HP["/ Homepage"]
-        LP["/ login"]
-        RP["/ register"]
-        PD["/ passenger Dashboard"]
-        DD["/ driver Dashboard"]
-        Map["RideMap Component\n(Leaflet + OpenStreetMap)"]
+    subgraph FE [Frontend localhost:3000]
+        HP[Homepage]
+        PD[Passenger Dashboard]
+        DD[Driver Dashboard]
+        Map[RideMap - Leaflet OSM]
     end
 
-    subgraph API["Backend — localhost:4000 (Express.js)"]
-        Auth["/api/auth\nregister · login · me"]
-        Rides["/api/rides\nrequest · list · cancel"]
-        Driver["/api/driver\ntoggle · requests · pools"]
-        Areas["/api/areas\nlist · fare-estimate"]
-        MW["Middleware\nJWT auth · Zod validation · Error handler"]
+    subgraph BE [Backend localhost:4000 - Express]
+        MW[JWT + Zod Middleware]
+        Auth[/api/auth]
+        Rides[/api/rides]
+        Driver[/api/driver]
+        Areas[/api/areas]
     end
 
-    subgraph Services["Business Logic"]
-        FareEngine["Fare Engine\nbaseFare + distanceCharge − poolDiscount"]
-        PoolMatcher["Pool Matcher\nzone compatibility · capacity guard"]
-        AreaRegistry["Area Registry\n9 Dhaka zones with lat/lng centroids"]
+    subgraph Logic [Business Logic]
+        Fare[Fare Engine]
+        Pool[Pool Matcher]
+        Zones[Area Registry - 9 zones]
     end
 
-    DB[("🐘 PostgreSQL 16\nusers · teslas · ride_requests\npools · pool_memberships\nride_status_events · audit_logs")]
+    DB[(PostgreSQL 16)]
 
-    Browser --> Frontend
-    Frontend -->|"fetch() + JWT Bearer"| MW
-    MW --> Auth
-    MW --> Rides
-    MW --> Driver
-    MW --> Areas
-    Rides --> FareEngine
-    Rides --> PoolMatcher
-    Driver --> PoolMatcher
-    Areas --> AreaRegistry
-    FareEngine --> AreaRegistry
-    Auth --> DB
-    Rides --> DB
-    Driver --> DB
-    Areas --> DB
+    Browser --> FE
+    FE -->|fetch + JWT| MW
+    MW --> Auth & Rides & Driver & Areas
+    Rides --> Fare & Pool
+    Driver --> Pool
+    Areas --> Zones
+    Fare --> Zones
+    Auth & Rides & Driver & Areas --> DB
     PD --> Map
 ```
 
