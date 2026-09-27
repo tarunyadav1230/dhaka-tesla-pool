@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { driver, Pool, RideRequest, ApiError, Tesla } from '@/lib/api';
+import LangSwitcher from '@/components/LangSwitcher';
 
 type PendingRide = RideRequest & { passenger: { id: string; name: string; phone: string } };
 
@@ -218,6 +219,8 @@ export default function DriverDashboard() {
           Dhaka Tesla Pool
         </a>
         <div className="navbar-actions">
+          <LangSwitcher />
+          <a href="/" className="btn btn-secondary btn-sm">← Home</a>
           <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>🚗 {user.name}</span>
           <button className="btn btn-secondary btn-sm" onClick={logout}>Sign out</button>
         </div>
