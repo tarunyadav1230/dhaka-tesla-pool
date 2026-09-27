@@ -7,7 +7,13 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public details?: unknown) {
-    super(message);
+    // If details is an array of field errors, surface the first one clearly
+    let displayMsg = message;
+    if (Array.isArray(details) && details.length > 0) {
+      const fieldErrors = (details as { field: string; message: string }[]);
+      displayMsg = fieldErrors.map(e => e.field ? `${e.field}: ${e.message}` : e.message).join(' · ');
+    }
+    super(displayMsg);
     this.name = 'ApiError';
   }
 }
@@ -39,6 +45,7 @@ async function apiFetch<T>(
 
   return data.data as T;
 }
+
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
