@@ -4,6 +4,11 @@
 
 A ride-pooling MVP for Dhaka — connecting passengers heading the same way, splitting fares fairly, and keeping Jashim's Bullet (a 3-seat battery-powered Tesla) moving efficiently through rush-hour traffic.
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-localhost%3A3000-brightgreen?logo=vercel)](http://localhost:3000)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-tarunyadav1230%2Fdhaka--tesla--pool-black?logo=github)](https://github.com/tarunyadav1230/dhaka-tesla-pool)
+[![Release](https://img.shields.io/badge/Release-v1.0.0-blue?logo=git)](https://github.com/tarunyadav1230/dhaka-tesla-pool/releases/tag/v1.0.0)
+[![Docker](https://img.shields.io/badge/Docker-Compose%20Ready-2496ED?logo=docker)](./docker-compose.yml)
+
 ---
 
 ## 📋 Table of Contents
