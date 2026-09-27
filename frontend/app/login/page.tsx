@@ -1,14 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
+import { useLang } from '@/lib/lang-context';
+import LangSwitcher from '@/components/LangSwitcher';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
+  const { t } = useLang();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,9 +23,8 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
-      // Redirect handled by page.tsx useEffect
-      router.push('/');
+      const user = await login(email, password);
+      router.push(user.role === 'DRIVER' ? '/driver' : '/passenger');
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else setError('Something went wrong. Please try again.');
@@ -30,6 +32,7 @@ export default function LoginPage() {
       setLoading(false);
     }
   }
+
 
   return (
     <div className="page-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '1.5rem' }}>
@@ -42,8 +45,9 @@ export default function LoginPage() {
               Dhaka Tesla Pool
             </div>
           </Link>
+          <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'center' }}><LangSwitcher /></div>
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem', fontSize: '0.9375rem' }}>
-            Sign in to continue
+            {t('signInToContinue')}
           </p>
         </div>
 
@@ -57,7 +61,7 @@ export default function LoginPage() {
               )}
 
               <div className="form-group">
-                <label className="form-label" htmlFor="login-email">Email address</label>
+                <label className="form-label" htmlFor="login-email">{t('emailAddress')}</label>
                 <input
                   id="login-email"
                   type="email"
@@ -71,7 +75,7 @@ export default function LoginPage() {
               </div>
 
               <div className="form-group">
-                <label className="form-label" htmlFor="login-password">Password</label>
+                <label className="form-label" htmlFor="login-password">{t('password')}</label>
                 <input
                   id="login-password"
                   type="password"
@@ -88,9 +92,9 @@ export default function LoginPage() {
                 {loading ? (
                   <>
                     <span className="spinner" style={{ width: '16px', height: '16px' }} />
-                    Signing in...
+                    {t('signingIn')}
                   </>
-                ) : 'Sign in →'}
+                ) : t('signInBtn')}
               </button>
             </form>
 
@@ -98,9 +102,9 @@ export default function LoginPage() {
 
             <div style={{ textAlign: 'center' }}>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                No account?{' '}
+                {t('noAccount')}{' '}
                 <Link href="/register" style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 500 }}>
-                  Sign up
+                  {t('signUp')}
                 </Link>
               </p>
             </div>
@@ -109,7 +113,7 @@ export default function LoginPage() {
 
             {/* Demo credentials */}
             <div style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px' }}>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Demo credentials</p>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{t('demoCredentials')}</p>
               {[
                 { label: 'Driver (Jashim)', email: 'jashim@teslapool.dhaka', pw: 'Bullet@2024' },
                 { label: 'Passenger (Nusrat)', email: 'nusrat@teslapool.dhaka', pw: 'Nusrat@2024' },
